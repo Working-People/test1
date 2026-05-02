@@ -106,6 +106,34 @@ const products = [
 
 const categories = [...new Set(products.map((product) => product.category))];
 
+const initialReviews = {
+  "ESP32-WROOM-32E 无线模块": [
+    { buyer: "深圳创客实验室", rating: 5, text: "上电稳定，Wi-Fi 配网很顺，适合小批量样机。", date: "2026-04-18" },
+    { buyer: "林工", rating: 4, text: "模组批次一致性不错，焊接前注意天线区域留空。", date: "2026-04-08" }
+  ],
+  "STM32F103C8T6 开发板": [
+    { buyer: "自动化教学组", rating: 5, text: "引脚标注清楚，课堂实验发放后返修率很低。", date: "2026-03-26" }
+  ],
+  "BME280 温湿压传感器": [
+    { buyer: "环境监测项目组", rating: 4, text: "I2C 读取稳定，校准后数据漂移很小。", date: "2026-04-02" }
+  ],
+  "0603 10K 精密电阻包": [
+    { buyer: "维修工作台", rating: 5, text: "阻值分装清晰，补料不用再翻半天料盒。", date: "2026-03-20" }
+  ],
+  "USB-C 16Pin 母座": [
+    { buyer: "便携设备团队", rating: 4, text: "沉板高度刚好，焊盘尺寸对手焊也友好。", date: "2026-04-11" }
+  ]
+};
+
+function getReviewStats(reviews = []) {
+  if (reviews.length === 0) {
+    return { average: 0, count: 0 };
+  }
+
+  const total = reviews.reduce((sum, review) => sum + review.rating, 0);
+  return { average: total / reviews.length, count: reviews.length };
+}
+
 function ProductIcon({ type }) {
   const icons = {
     module: (
@@ -191,6 +219,13 @@ export default function Home() {
   const [protoOnly, setProtoOnly] = useState(false);
   const [sortBy, setSortBy] = useState("popular");
   const [cart, setCart] = useState([]);
+  const [reviewsByProduct, setReviewsByProduct] = useState(initialReviews);
+  const [reviewForm, setReviewForm] = useState({
+    productName: products[0].name,
+    buyer: "",
+    rating: 5,
+    text: ""
+  });
 
   const filteredProducts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -215,6 +250,11 @@ export default function Home() {
   }, [protoOnly, query, selectedCategories, sortBy, stockOnly]);
 
   const cartTotal = cart.reduce((sum, product) => sum + product.price, 0);
+  const purchasedProducts = [...new Map(cart.map((product) => [product.name, product])).values()];
+  const reviewableProducts = purchasedProducts.length > 0 ? purchasedProducts : products;
+  const totalReviews = Object.values(reviewsByProduct).reduce((sum, reviews) => sum + reviews.length, 0);
+  const selectedProductReviews = reviewsByProduct[reviewForm.productName] ?? [];
+  const selectedReviewStats = getReviewStats(selectedProductReviews);
 
   function toggleCategory(category) {
     setSelectedCategories((current) =>
@@ -225,6 +265,35 @@ export default function Home() {
   function setQuickFilter(category) {
     setSelectedCategories([category]);
     document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function addToCart(product) {
+    setCart((current) => [...current, product]);
+    setReviewForm((current) => ({ ...current, productName: product.name }));
+  }
+
+  function submitReview(event) {
+    event.preventDefault();
+
+    const buyer = reviewForm.buyer.trim() || "匿名买家";
+    const text = reviewForm.text.trim();
+
+    if (!text) {
+      return;
+    }
+
+    const nextReview = {
+      buyer,
+      rating: Number(reviewForm.rating),
+      text,
+      date: new Date().toISOString().slice(0, 10)
+    };
+
+    setReviewsByProduct((current) => ({
+      ...current,
+      [reviewForm.productName]: [nextReview, ...(current[reviewForm.productName] ?? [])]
+    }));
+    setReviewForm((current) => ({ ...current, buyer: "", rating: 5, text: "" }));
   }
 
   return (
@@ -338,6 +407,13 @@ export default function Home() {
                   <article className="product" key={product.name}>
                     <div className="product-art"><ProductIcon type={product.art} /></div>
                     <div className="product-body">
+                      {(() => {
+                        const productReviews = reviewsByProduct[product.name] ?? [];
+                        const stats = getReviewStats(productReviews);
+                        const latestReview = productReviews[0];
+
+                        return (
+                          <>
                       <div className="meta">
                         <span className="tag">{product.category}</span>
                         <span>库存 {product.stock.toLocaleString("zh-CN")} 件</span>
@@ -347,17 +423,28 @@ export default function Home() {
                       <div className="specs">
                         {product.specs.map((spec) => <span key={spec}>{spec}</span>)}
                       </div>
+                      <div className="review-strip" aria-label={`${product.name} 购买评价`}>
+                        <div className="rating">
+                          <span aria-hidden="true">★★★★★</span>
+                          <strong>{stats.count > 0 ? stats.average.toFixed(1) : "暂无"}</strong>
+                          <small>{stats.count} 条评价</small>
+                        </div>
+                        <p>{latestReview ? latestReview.text : "购买后可分享焊接、上电和项目适配体验。"}</p>
+                      </div>
                       <div className="buy-row">
                         <div>
                           <div className="price">￥{product.price.toFixed(2)}</div>
                           <div className="stock">{product.proto ? "样机友好" : "批量备料"}</div>
                         </div>
-                        <button className="add" type="button" aria-label={`加入 ${product.name}`} onClick={() => setCart((current) => [...current, product])}>
+                        <button className="add" type="button" aria-label={`加入 ${product.name}`} onClick={() => addToCart(product)}>
                           <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                             <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
                           </svg>
                         </button>
                       </div>
+                          </>
+                        );
+                      })()}
                     </div>
                   </article>
                 ))
@@ -377,6 +464,82 @@ export default function Home() {
           </div>
           <strong>￥{cartTotal.toFixed(2)}</strong>
           <button className="primary" type="button">提交询价</button>
+        </section>
+
+        <section className="reviews-panel" aria-label="购买评论">
+          <div className="reviews-head">
+            <div>
+              <h2>购买评论</h2>
+              <p>共有 {totalReviews} 条买家反馈，加入采购清单后可为对应器件补充评论。</p>
+            </div>
+            <div className="review-score">
+              <strong>{selectedReviewStats.count > 0 ? selectedReviewStats.average.toFixed(1) : "暂无"}</strong>
+              <span>{reviewForm.productName}</span>
+            </div>
+          </div>
+
+          <div className="review-layout">
+            <form className="review-form" onSubmit={submitReview}>
+              <label>
+                评价器件
+                <select
+                  value={reviewForm.productName}
+                  onChange={(event) => setReviewForm((current) => ({ ...current, productName: event.target.value }))}
+                >
+                  {reviewableProducts.map((product) => (
+                    <option key={product.name} value={product.name}>{product.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                买家名称
+                <input
+                  type="text"
+                  placeholder="例如：硬件实验室"
+                  value={reviewForm.buyer}
+                  onChange={(event) => setReviewForm((current) => ({ ...current, buyer: event.target.value }))}
+                />
+              </label>
+              <label>
+                评分
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  value={reviewForm.rating}
+                  onChange={(event) => setReviewForm((current) => ({ ...current, rating: event.target.value }))}
+                />
+                <span>{reviewForm.rating} 星</span>
+              </label>
+              <label>
+                评论内容
+                <textarea
+                  rows="4"
+                  placeholder="写下焊接手感、兼容性、到货状态或项目使用体验"
+                  value={reviewForm.text}
+                  onChange={(event) => setReviewForm((current) => ({ ...current, text: event.target.value }))}
+                />
+              </label>
+              <button className="primary" type="submit">发布评论</button>
+            </form>
+
+            <div className="review-list">
+              {selectedProductReviews.length === 0 ? (
+                <div className="empty-review">这款器件还没有评论，第一条实测反馈就等你来写。</div>
+              ) : (
+                selectedProductReviews.map((review) => (
+                  <article className="review-item" key={`${review.buyer}-${review.date}-${review.text}`}>
+                    <div>
+                      <strong>{review.buyer}</strong>
+                      <span>{review.date}</span>
+                    </div>
+                    <div className="review-stars" aria-label={`${review.rating} 星`}>{"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}</div>
+                    <p>{review.text}</p>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
         </section>
       </main>
     </>
